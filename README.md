@@ -2,6 +2,10 @@
 
 Version 2.2 des Windows-Programms zum Erzeugen verschlüsselter Electrum-Wallet-Dateien mit regulären Bitcoin-`bc1`-Adressen.
 
+## Vorschau
+
+![Walletgenerator 2.2](docs/walletgenerator-v2.2.png)
+
 ## Windows-Download
 
 [Walletgenerator.exe über Google Drive herunterladen](https://drive.google.com/file/d/12JmmMNM_ns4LL2FxQ26PwXgKrMPIDJXo/view?usp=drivesdk)
