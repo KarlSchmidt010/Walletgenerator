@@ -1,16 +1,16 @@
 # Walletgenerator
 
-Version 2.3 des Windows-Programms zum Erzeugen verschlüsselter Electrum-Wallet-Dateien mit regulären Bitcoin-`bc1`-Adressen.
+Version 2.4 des Windows-Programms zum Erzeugen verschlüsselter Electrum-Wallet-Dateien mit regulären Bitcoin-`bc1`-Adressen.
 
 ## Vorschau
 
-![Walletgenerator 2.3](docs/walletgenerator-v2.3.png)
+![Walletgenerator 2.4](docs/walletgenerator-v2.4.png)
 
 ## Windows-Download
 
 [Walletgenerator.exe über Google Drive herunterladen](https://drive.google.com/file/d/12JmmMNM_ns4LL2FxQ26PwXgKrMPIDJXo/view?usp=drivesdk)
 
-SHA-256: `0cc4b675fedc0d88855be6d20551aad57084946c460ff007dd01a0f425827c01`
+SHA-256: `1a16fa7e96cc539e39bd8d96ab9c98c211b3c501fefa0b19db4b2cb498bfaee3`
 
 ## Verwendung
 
@@ -29,6 +29,8 @@ Im PIN-Modus erhält jede Wallet eine eigene zufällige PIN. Im Modus für zufä
 - reguläre Bitcoin-SegWit-Adressen mit `bc1`
 - bis zu 1.000.000 Wallet-Dateien
 - wissenschaftlich gestaltete Dark-Mode-Oberfläche mit klar getrennten Arbeitsbereichen
+- größenverstellbares Fenster mit vertikalem Scrollbereich für kleine Bildschirme
+- gut sichtbare Hoch-/Runter-Pfeile in Zahlenfeldern im Dark Mode
 - farbcodierte Zustände für Bereit, Aktiv, Pausiert, Fertig und Fehler
 - eigene zufällige Zahlen-PIN pro Wallet mit 6 bis 20 Stellen
 - eigenes zufälliges englisches Seed-Wort pro Wallet
