@@ -2,9 +2,15 @@
 
 Windows-Programm zum Erzeugen verschlüsselter Electrum-Wallet-Dateien mit regulären Bitcoin-`bc1`-Adressen.
 
+## Windows-Download
+
+[Walletgenerator.exe über Google Drive herunterladen](https://drive.google.com/file/d/12JmmMNM_ns4LL2FxQ26PwXgKrMPIDJXo/view?usp=drivesdk)
+
+SHA-256: `05a78f8bf4ee4ae5b67bea829e53dde193832bcd0849001d05a0abdad13a737c`
+
 ## Verwendung
 
-1. `Walletgenerator.exe` aus dem neuesten Release herunterladen.
+1. `Walletgenerator.exe` über den obigen Download-Link herunterladen.
 2. Einen neuen, leeren Zielordner auswählen.
 3. CPU-Zielauslastung und maximale Prozesszahl passend zum Rechner einstellen.
 4. Die gewünschte Anzahl Wallets festlegen und die Erzeugung starten.
