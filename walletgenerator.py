@@ -13,11 +13,12 @@ from tempfile import TemporaryDirectory
 from threading import Event, Thread
 import time
 
-from PyQt6.QtCore import QLockFile, QObject, Qt, pyqtSignal
+from PyQt6.QtCore import QLockFile, QObject, QPoint, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter, QPolygon
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QCompleter, QFileDialog, QFormLayout, QHBoxLayout,
     QFrame, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QSpinBox,
-    QVBoxLayout, QWidget,
+    QProxyStyle, QScrollArea, QStyle, QVBoxLayout, QWidget,
 )
 
 from electrum import util
@@ -43,7 +44,7 @@ def verify_wallet(path, pin):
 
 
 LOGICAL_CPUS = max(1, os.cpu_count() or 1)
-APP_VERSION = "2.3"
+APP_VERSION = "2.4"
 SEED_WORDS = tuple(Mnemonic("en").wordlist)
 SEED_WORD_SET = frozenset(SEED_WORDS)
 PAUSE_FILE = ".walletgenerator.pause"
@@ -114,6 +115,39 @@ def configure_windows_worker():
     """Apply the background-performance policy once in every worker process."""
     set_windows_power_throttling(True)
 
+
+class VisibleArrowStyle(QProxyStyle):
+    """Draw high-contrast spin-box arrows that remain visible in dark mode."""
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        arrows = (
+            QStyle.PrimitiveElement.PE_IndicatorSpinUp,
+            QStyle.PrimitiveElement.PE_IndicatorSpinDown,
+        )
+        if element not in arrows:
+            return super().drawPrimitive(element, option, painter, widget)
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        enabled = bool(option.state & QStyle.StateFlag.State_Enabled)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#86efea" if enabled else "#526a73"))
+        center = option.rect.center()
+        if element == QStyle.PrimitiveElement.PE_IndicatorSpinUp:
+            points = (
+                QPoint(center.x() - 4, center.y() + 2),
+                QPoint(center.x(), center.y() - 2),
+                QPoint(center.x() + 4, center.y() + 2),
+            )
+        else:
+            points = (
+                QPoint(center.x() - 4, center.y() - 2),
+                QPoint(center.x(), center.y() + 2),
+                QPoint(center.x() + 4, center.y() - 2),
+            )
+        painter.drawPolygon(QPolygon(points))
+        painter.restore()
+
 APP_STYLESHEET = """
 QWidget {
     color: #dceaf1;
@@ -122,6 +156,34 @@ QWidget {
 }
 QWidget#Root {
     background-color: #081018;
+}
+QWidget#Content {
+    background-color: #081018;
+}
+QScrollArea#MainScroll {
+    background-color: #081018;
+    border: 0;
+}
+QScrollBar:vertical {
+    background-color: #09131c;
+    border: 0;
+    width: 12px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background-color: #2d6870;
+    border-radius: 5px;
+    min-height: 40px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical:hover {
+    background-color: #43a8aa;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
 }
 QLabel#Eyebrow {
     color: #43d7d0;
@@ -226,11 +288,6 @@ QComboBox QAbstractItemView {
     selection-color: #ffffff;
     selection-background-color: #236e74;
     padding: 4px;
-}
-QSpinBox::up-button, QSpinBox::down-button {
-    background-color: #132431;
-    border: 0;
-    width: 22px;
 }
 QProgressBar {
     color: #c9dae2;
@@ -498,8 +555,16 @@ class WalletWindow(QWidget):
         super().__init__()
         self.setWindowTitle(f"Walletgenerator {APP_VERSION}")
         self.setObjectName("Root")
-        self.setMinimumSize(680, 760)
-        self.resize(760, 820)
+        self.setMinimumSize(620, 480)
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.resize(760, 700)
+        else:
+            available = screen.availableGeometry()
+            self.resize(
+                min(760, max(620, available.width() - 40)),
+                min(700, max(480, available.height() - 40)),
+            )
         self.job = None
         self.is_paused = False
 
@@ -526,7 +591,22 @@ class WalletWindow(QWidget):
             body.addLayout(heading)
             return frame, body
 
-        layout = QVBoxLayout(self)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+        self.scroll = QScrollArea()
+        self.scroll.setObjectName("MainScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        content = QWidget()
+        content.setObjectName("Content")
+        self.scroll.setWidget(content)
+        shell.addWidget(self.scroll)
+
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(26, 22, 26, 24)
         layout.setSpacing(12)
 
@@ -850,7 +930,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Walletgenerator")
     app.setApplicationDisplayName(f"Walletgenerator {APP_VERSION}")
-    app.setStyle("Fusion")
+    app.setStyle(VisibleArrowStyle("Fusion"))
     app.setStyleSheet(APP_STYLESHEET)
     window = WalletWindow()
     if len(sys.argv) == 3 and sys.argv[1] == "--ui-screenshot":
@@ -860,6 +940,17 @@ def main():
         return 0 if saved else 1
     if len(sys.argv) == 3 and sys.argv[1] == "--smoke-test":
         root = Path(sys.argv[2])
+        window.resize(620, 480)
+        window.show()
+        app.processEvents()
+        scrollbar = window.scroll.verticalScrollBar()
+        if scrollbar.maximum() <= 0:
+            return 1
+        scrollbar.setValue(scrollbar.maximum())
+        app.processEvents()
+        if scrollbar.value() != scrollbar.maximum():
+            return 1
+        window.hide()
         configure_windows_worker()
         set_windows_awake(True)
         set_windows_awake(False)
