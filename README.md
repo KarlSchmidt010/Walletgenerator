@@ -1,23 +1,23 @@
 # Walletgenerator
 
-Version 2.0 des Windows-Programms zum Erzeugen verschlüsselter Electrum-Wallet-Dateien mit regulären Bitcoin-`bc1`-Adressen.
+Version 2.1 des Windows-Programms zum Erzeugen verschlüsselter Electrum-Wallet-Dateien mit regulären Bitcoin-`bc1`-Adressen.
 
 ## Windows-Download
 
 [Walletgenerator.exe über Google Drive herunterladen](https://drive.google.com/file/d/12JmmMNM_ns4LL2FxQ26PwXgKrMPIDJXo/view?usp=drivesdk)
 
-SHA-256: `89b1401b6461e9adb234292244e6b83af60c8f0c237bb0a8401c584e299b4742`
+SHA-256: `69caed22f4495313ebf449fa2c4d4098cf7ec0752ef609724a5d110cbc719793`
 
 ## Verwendung
 
 1. `Walletgenerator.exe` über den obigen Download-Link herunterladen.
 2. Einen neuen, leeren Zielordner auswählen.
-3. Als Passwortmodus entweder eine zufällige Zahlen-PIN oder ein festes Seed-Wort auswählen.
-4. Bei Zufalls-PINs eine Länge zwischen 6 und 20 Stellen einstellen; im Wortmodus ein englisches Seed-Wort auswählen.
+3. Als Passwortmodus eine zufällige Zahlen-PIN, ein zufälliges Seed-Wort pro Wallet oder ein festes Seed-Wort auswählen.
+4. Bei Zufalls-PINs eine Länge zwischen 6 und 20 Stellen einstellen; beim festen Wort ein englisches Seed-Wort auswählen.
 5. CPU-Zielauslastung und maximale Prozesszahl passend zum Rechner einstellen.
 6. Die gewünschte Anzahl Wallets festlegen und die Erzeugung starten.
 
-Im PIN-Modus erhält jede Wallet eine eigene zufällige PIN. Diese PINs werden nicht angezeigt oder gespeichert. Im Wortmodus werden alle Wallets mit dem ausgewählten Wort verschlüsselt. Ein abgebrochener Lauf kann im gleichen Zielordner mit identischen Einstellungen fortgesetzt werden.
+Im PIN-Modus erhält jede Wallet eine eigene zufällige PIN. Im Modus für zufällige Seed-Wörter erhält jede Wallet unabhängig ein Wort aus der englischen Seed-Wortliste. Zufällig erzeugte Passwörter werden nicht angezeigt oder gespeichert. Im festen Wortmodus werden alle Wallets mit dem ausgewählten Wort verschlüsselt. Ein abgebrochener Lauf kann im gleichen Zielordner mit identischen Einstellungen fortgesetzt werden.
 
 ## Wichtige Eigenschaften
 
@@ -25,6 +25,7 @@ Im PIN-Modus erhält jede Wallet eine eigene zufällige PIN. Diese PINs werden n
 - reguläre Bitcoin-SegWit-Adressen mit `bc1`
 - bis zu 1.000.000 Wallet-Dateien
 - eigene zufällige Zahlen-PIN pro Wallet mit 6 bis 20 Stellen
+- eigenes zufälliges englisches Seed-Wort pro Wallet
 - alternativ ein festes Wort aus der englischen Seed-Wortliste
 - Schutz vor dem Vermischen von Datensätzen mit unterschiedlichen Passworteinstellungen
 - automatische Erkennung der verfügbaren logischen Prozessoren
@@ -35,7 +36,7 @@ Im PIN-Modus erhält jede Wallet eine eigene zufällige PIN. Diese PINs werden n
 - Pause und Fortsetzen innerhalb eines laufenden Generierungsvorgangs
 - Wiederaufnahme vorhandener Datensätze nach einem Abbruch oder Neustart
 
-Die CPU-Zielauslastung wird näherungsweise über die Zahl der Worker-Prozesse begrenzt; sie ist kein exaktes Betriebssystem-Limit. Kurze PINs und einzelne Wörter bieten nur geringen Schutz. Zufalls-PINs werden absichtlich nicht gespeichert und können später nicht wiederhergestellt werden. Das Programm eignet sich daher für Testdatensätze. Es sollte kein echtes Bitcoin-Guthaben mit diesen Wallets verwaltet werden.
+Die CPU-Zielauslastung wird näherungsweise über die Zahl der Worker-Prozesse begrenzt; sie ist kein exaktes Betriebssystem-Limit. Kurze PINs und einzelne Wörter bieten nur geringen Schutz. Zufällige PINs und Seed-Wörter werden absichtlich nicht gespeichert und können später nicht wiederhergestellt werden. Das Programm eignet sich daher für Testdatensätze. Es sollte kein echtes Bitcoin-Guthaben mit diesen Wallets verwaltet werden.
 
 ## Quellcode und Abhängigkeiten
 
