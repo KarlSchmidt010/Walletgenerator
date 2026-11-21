@@ -42,7 +42,7 @@ def verify_wallet(path, pin):
 
 
 LOGICAL_CPUS = max(1, os.cpu_count() or 1)
-APP_VERSION = "2.0"
+APP_VERSION = "2.1"
 SEED_WORDS = tuple(Mnemonic("en").wordlist)
 SEED_WORD_SET = frozenset(SEED_WORDS)
 PAUSE_FILE = ".walletgenerator.pause"
@@ -61,6 +61,8 @@ def create_password(mode, value):
         if not 6 <= length <= 20:
             raise ValueError("Die PIN-Länge muss zwischen 6 und 20 liegen.")
         return "".join(secrets.choice("0123456789") for _ in range(length))
+    if mode == "random_seed_word":
+        return secrets.choice(SEED_WORDS)
     if mode == "seed_word":
         if value not in SEED_WORD_SET:
             raise ValueError("Wähle ein gültiges Wort aus der Electrum-Seed-Wortliste.")
@@ -71,11 +73,17 @@ def create_password(mode, value):
 def dataset_config(mode, value):
     if mode == "random_pin":
         return {"version": 2, "mode": mode, "pin_length": int(value)}
-    return {
-        "version": 2,
-        "mode": mode,
-        "password_fingerprint": hashlib.sha256(value.encode("utf-8")).hexdigest(),
-    }
+    if mode == "random_seed_word":
+        return {"version": 2, "mode": mode}
+    if mode == "seed_word":
+        return {
+            "version": 2,
+            "mode": mode,
+            "password_fingerprint": hashlib.sha256(
+                value.encode("utf-8")
+            ).hexdigest(),
+        }
+    raise ValueError("Unbekannter Passwortmodus.")
 
 
 def generate_batch(job):
@@ -271,6 +279,9 @@ class WalletWindow(QWidget):
         self.count.setGroupSeparatorShown(True)
         self.password_mode = QComboBox()
         self.password_mode.addItem("Zufällige PIN pro Wallet", "random_pin")
+        self.password_mode.addItem(
+            "Zufälliges Seed-Wort pro Wallet", "random_seed_word"
+        )
         self.password_mode.addItem("Festes Seed-Wort", "seed_word")
         self.pin_length = QSpinBox()
         self.pin_length.setRange(6, 20)
@@ -353,16 +364,24 @@ class WalletWindow(QWidget):
         )
 
     def update_password_controls(self):
-        random_mode = self.password_mode.currentData() == "random_pin"
-        self.pin_length_label.setVisible(random_mode)
-        self.pin_length.setVisible(random_mode)
-        self.seed_word_label.setVisible(not random_mode)
-        self.seed_word.setVisible(not random_mode)
-        if random_mode:
+        mode = self.password_mode.currentData()
+        pin_mode = mode == "random_pin"
+        fixed_word_mode = mode == "seed_word"
+        self.pin_length_label.setVisible(pin_mode)
+        self.pin_length.setVisible(pin_mode)
+        self.seed_word_label.setVisible(fixed_word_mode)
+        self.seed_word.setVisible(fixed_word_mode)
+        if pin_mode:
             self.notice.setText(
                 "Jede Wallet erhält eine eigene zufällige Zahlen-PIN. Die PINs "
                 "werden nicht angezeigt oder gespeichert. Prozessoranzahl und "
                 "Auslastung werden an diesen Rechner angepasst."
+            )
+        elif mode == "random_seed_word":
+            self.notice.setText(
+                "Jede Wallet erhält ein eigenes zufälliges englisches Seed-Wort. "
+                "Die Wörter werden nicht angezeigt oder gespeichert. "
+                "Prozessoranzahl und Auslastung werden an diesen Rechner angepasst."
             )
         else:
             self.notice.setText(
@@ -375,6 +394,8 @@ class WalletWindow(QWidget):
         mode = self.password_mode.currentData()
         if mode == "random_pin":
             return mode, str(self.pin_length.value())
+        if mode == "random_seed_word":
+            return mode, ""
         word = self.seed_word.currentText().strip().lower()
         if word not in SEED_WORD_SET:
             raise ValueError(
@@ -494,6 +515,11 @@ def main():
         if len(random_pins) != 25 or not all(
             len(pin) == 20 and pin.isdigit() for pin in random_pins
         ):
+            return 1
+        random_words = [
+            create_password("random_seed_word", "") for _ in range(100)
+        ]
+        if not all(word in SEED_WORD_SET for word in random_words):
             return 1
         (root / "smoke-ok.txt").write_text("OK", encoding="utf-8")
         return 0
