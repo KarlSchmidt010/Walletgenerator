@@ -1,16 +1,16 @@
 # Walletgenerator
 
-Version 2.2 des Windows-Programms zum Erzeugen verschlüsselter Electrum-Wallet-Dateien mit regulären Bitcoin-`bc1`-Adressen.
+Version 2.3 des Windows-Programms zum Erzeugen verschlüsselter Electrum-Wallet-Dateien mit regulären Bitcoin-`bc1`-Adressen.
 
 ## Vorschau
 
-![Walletgenerator 2.2](docs/walletgenerator-v2.2.png)
+![Walletgenerator 2.3](docs/walletgenerator-v2.3.png)
 
 ## Windows-Download
 
 [Walletgenerator.exe über Google Drive herunterladen](https://drive.google.com/file/d/12JmmMNM_ns4LL2FxQ26PwXgKrMPIDJXo/view?usp=drivesdk)
 
-SHA-256: `88b28a83097f8a361d4547ed4783004a3e3dd5ef2ff623aca2aaed46f7b5c5c1`
+SHA-256: `0cc4b675fedc0d88855be6d20551aad57084946c460ff007dd01a0f425827c01`
 
 ## Verwendung
 
@@ -38,11 +38,13 @@ Im PIN-Modus erhält jede Wallet eine eigene zufällige PIN. Im Modus für zufä
 - einstellbare CPU-Zielauslastung von 1 bis 100 Prozent
 - frei begrenzbare Prozesszahl innerhalb der erkannten Rechnerkapazität
 - Live-Anzeige der tatsächlich verwendeten Prozesszahl
+- Schutz vor Windows-EcoQoS-/Hintergrunddrosselung für alle Worker-Prozesse
+- automatische Standby-Sperre während einer laufenden Generierung
 - reduzierter anfänglicher Adressvorrat, den Electrum beim Öffnen automatisch erweitert
 - Pause und Fortsetzen innerhalb eines laufenden Generierungsvorgangs
 - Wiederaufnahme vorhandener Datensätze nach einem Abbruch oder Neustart
 
-Die CPU-Zielauslastung wird näherungsweise über die Zahl der Worker-Prozesse begrenzt; sie ist kein exaktes Betriebssystem-Limit. Kurze PINs und einzelne Wörter bieten nur geringen Schutz. Zufällige PINs und Seed-Wörter werden absichtlich nicht gespeichert und können später nicht wiederhergestellt werden. Das Programm eignet sich daher für Testdatensätze. Es sollte kein echtes Bitcoin-Guthaben mit diesen Wallets verwaltet werden.
+Die CPU-Zielauslastung wird näherungsweise über die Zahl der Worker-Prozesse begrenzt; sie ist kein exaktes Betriebssystem-Limit. Version 2.3 hält die Prozesse auch bei minimiertem Fenster im normalen Windows-Leistungsmodus, erhöht ihre Priorität aber nicht über „Normal“. Kurze PINs und einzelne Wörter bieten nur geringen Schutz. Zufällige PINs und Seed-Wörter werden absichtlich nicht gespeichert und können später nicht wiederhergestellt werden. Das Programm eignet sich daher für Testdatensätze. Es sollte kein echtes Bitcoin-Guthaben mit diesen Wallets verwaltet werden.
 
 ## Quellcode und Abhängigkeiten
 
