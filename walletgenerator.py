@@ -1,21 +1,26 @@
-"""Create encrypted Electrum wallets protected by one fixed PIN."""
+"""Create encrypted Electrum wallets with configurable passwords."""
 import asyncio
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+import hashlib
+import json
 import multiprocessing
 import os
 from pathlib import Path
+import secrets
 import sys
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
 import time
 
-from PyQt6.QtCore import QLockFile, QObject, QTimer, pyqtSignal
+from PyQt6.QtCore import QLockFile, QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QProgressBar, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QCompleter, QFileDialog, QFormLayout, QHBoxLayout,
+    QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QSpinBox,
+    QVBoxLayout, QWidget,
 )
 
 from electrum import util
+from electrum.mnemonic import Mnemonic
 from electrum.simple_config import SimpleConfig
 from electrum.storage import WalletStorage
 from electrum.wallet import create_new_wallet
@@ -36,10 +41,13 @@ def verify_wallet(path, pin):
         )
 
 
-WALLET_PIN = "120577"
 LOGICAL_CPUS = max(1, os.cpu_count() or 1)
+APP_VERSION = "2.0"
+SEED_WORDS = tuple(Mnemonic("en").wordlist)
+SEED_WORD_SET = frozenset(SEED_WORDS)
 PAUSE_FILE = ".walletgenerator.pause"
 CANCEL_FILE = ".walletgenerator.cancel"
+DATASET_FILE = ".walletgenerator-password-mode-v2"
 
 
 def calculate_worker_count(logical_cpus, cpu_percent, process_limit):
@@ -47,8 +55,31 @@ def calculate_worker_count(logical_cpus, cpu_percent, process_limit):
     return max(1, min(process_limit, percentage_limit))
 
 
+def create_password(mode, value):
+    if mode == "random_pin":
+        length = int(value)
+        if not 6 <= length <= 20:
+            raise ValueError("Die PIN-Länge muss zwischen 6 und 20 liegen.")
+        return "".join(secrets.choice("0123456789") for _ in range(length))
+    if mode == "seed_word":
+        if value not in SEED_WORD_SET:
+            raise ValueError("Wähle ein gültiges Wort aus der Electrum-Seed-Wortliste.")
+        return value
+    raise ValueError("Unbekannter Passwortmodus.")
+
+
+def dataset_config(mode, value):
+    if mode == "random_pin":
+        return {"version": 2, "mode": mode, "pin_length": int(value)}
+    return {
+        "version": 2,
+        "mode": mode,
+        "password_fingerprint": hashlib.sha256(value.encode("utf-8")).hexdigest(),
+    }
+
+
 def generate_batch(job):
-    root, start, stop = job
+    root, start, stop, password_mode, password_value = job
     pause_flag = root / PAUSE_FILE
     cancel_flag = root / CANCEL_FILE
 
@@ -69,8 +100,9 @@ def generate_batch(job):
                 if destination.exists():
                     processed += 1
                     continue
+                password = create_password(password_mode, password_value)
                 create_new_wallet(
-                    path=str(temporary), config=config, password=WALLET_PIN,
+                    path=str(temporary), config=config, password=password,
                     encrypt_file=True, seed_type="segwit",
                     gap_limit=1, gap_limit_for_change=1,
                 )
@@ -84,7 +116,10 @@ def generate_batch(job):
     return asyncio.run(run())
 
 
-def generate(root, count, cancelled, progress, worker_count):
+def generate(
+    root, count, cancelled, progress, worker_count, password_mode,
+    password_value,
+):
     root.mkdir(parents=True, exist_ok=True)
     pause_flag = root / PAUSE_FILE
     cancel_flag = root / CANCEL_FILE
@@ -94,23 +129,36 @@ def generate(root, count, cancelled, progress, worker_count):
         raise ValueError("Dieser Zielordner ist bereits in Benutzung oder schreibgeschützt.")
 
     try:
-        marker = root / ".walletgenerator-fixed-pin-120577-v1"
+        marker = root / DATASET_FILE
+        expected_config = dataset_config(password_mode, password_value)
         existing_items = [item for item in root.iterdir()
                           if item.name != ".walletgenerator.lock"]
         if not marker.exists() and existing_items:
             raise ValueError(
-                "Wähle einen neuen leeren Ordner. Bestehende Datensätze mit anderen "
-                "PIN-Einstellungen können nicht übernommen werden."
+                "Wähle einen neuen leeren Ordner. Datensätze aus einer älteren "
+                "Version oder mit anderen Passworteinstellungen können nicht "
+                "übernommen werden."
             )
         if not marker.exists():
-            marker.write_text(
-                "Walletgenerator fixed PIN dataset v1\nPIN: 120577\n",
-                encoding="utf-8",
-            )
+            marker.write_text(json.dumps(expected_config, sort_keys=True), encoding="utf-8")
+        else:
+            try:
+                stored_config = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as error:
+                raise ValueError("Die Datensatzkonfiguration ist beschädigt.") from error
+            if stored_config != expected_config:
+                raise ValueError(
+                    "Dieser Datensatz wurde mit anderen Passworteinstellungen "
+                    "erstellt. Verwende die ursprünglichen Einstellungen oder "
+                    "wähle einen neuen leeren Ordner."
+                )
 
         batch_size = 100
         jobs = iter(
-            (root, start, min(start + batch_size, count))
+            (
+                root, start, min(start + batch_size, count), password_mode,
+                password_value,
+            )
             for start in range(0, count, batch_size)
         )
         completed = 0
@@ -149,11 +197,15 @@ class WalletJob(QObject):
     completed = pyqtSignal(int)
     failed = pyqtSignal(str)
 
-    def __init__(self, root, count, worker_count, parent):
+    def __init__(
+        self, root, count, worker_count, password_mode, password_value, parent,
+    ):
         super().__init__(parent)
         self.root = root
         self.count = count
         self.worker_count = worker_count
+        self.password_mode = password_mode
+        self.password_value = password_value
         self.cancelled = Event()
         self.pause_flag = root / PAUSE_FILE
         self.cancel_flag = root / CANCEL_FILE
@@ -179,7 +231,7 @@ class WalletJob(QObject):
         try:
             done = generate(
                 self.root, self.count, self.cancelled, self.progress.emit,
-                self.worker_count,
+                self.worker_count, self.password_mode, self.password_value,
             )
             self.completed.emit(done)
         except Exception as error:
@@ -191,7 +243,7 @@ class WalletJob(QObject):
 class WalletWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Walletgenerator")
+        self.setWindowTitle(f"Walletgenerator {APP_VERSION}")
         self.setMinimumWidth(510)
         self.job = None
         self.is_paused = False
@@ -201,12 +253,9 @@ class WalletWindow(QWidget):
         layout.setSpacing(12)
         subtitle = QLabel("Verschlüsselte Electrum-Wallets mit regulären bc1-Adressen")
         layout.addWidget(subtitle)
-        notice = QLabel(
-            "Jede Wallet wird mit der festen PIN 120577 verschlüsselt. "
-            "Prozessoranzahl und Auslastung werden an diesen Rechner angepasst."
-        )
-        notice.setWordWrap(True)
-        layout.addWidget(notice)
+        self.notice = QLabel()
+        self.notice.setWordWrap(True)
+        layout.addWidget(self.notice)
 
         self.folder = QLineEdit()
         self.folder.setPlaceholderText("Leeren oder bestehenden Datensatzordner wählen")
@@ -220,6 +269,26 @@ class WalletWindow(QWidget):
         self.count.setRange(1, 1_000_000)
         self.count.setValue(1_000_000)
         self.count.setGroupSeparatorShown(True)
+        self.password_mode = QComboBox()
+        self.password_mode.addItem("Zufällige PIN pro Wallet", "random_pin")
+        self.password_mode.addItem("Festes Seed-Wort", "seed_word")
+        self.pin_length = QSpinBox()
+        self.pin_length.setRange(6, 20)
+        self.pin_length.setValue(6)
+        self.pin_length.setSuffix(" Stellen")
+        self.pin_length_label = QLabel("PIN-Länge")
+        self.seed_word = QComboBox()
+        self.seed_word.setEditable(True)
+        self.seed_word.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.seed_word.setMaxVisibleItems(20)
+        self.seed_word.addItems(SEED_WORDS)
+        self.seed_word.setCurrentText("abandon")
+        self.seed_word_label = QLabel("Seed-Wort")
+        word_completer = self.seed_word.completer()
+        word_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        word_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        word_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.password_mode.currentIndexChanged.connect(self.update_password_controls)
         self.cpu_percent = QSpinBox()
         self.cpu_percent.setRange(1, 100)
         self.cpu_percent.setValue(50)
@@ -233,10 +302,14 @@ class WalletWindow(QWidget):
         form = QFormLayout()
         form.addRow("Zielordner", folder_row)
         form.addRow("Wallet-Anzahl", self.count)
+        form.addRow("Passwortmodus", self.password_mode)
+        form.addRow(self.pin_length_label, self.pin_length)
+        form.addRow(self.seed_word_label, self.seed_word)
         form.addRow("CPU-Zielauslastung", self.cpu_percent)
         form.addRow("Maximale Prozesse", self.process_limit)
         form.addRow("Erkannte Leistung", self.capacity)
         layout.addLayout(form)
+        self.update_password_controls()
         self.update_capacity()
 
         self.progress = QProgressBar()
@@ -279,14 +352,50 @@ class WalletWindow(QWidget):
             f"{LOGICAL_CPUS} logische Prozessoren erkannt, {active} Prozesse aktiv"
         )
 
+    def update_password_controls(self):
+        random_mode = self.password_mode.currentData() == "random_pin"
+        self.pin_length_label.setVisible(random_mode)
+        self.pin_length.setVisible(random_mode)
+        self.seed_word_label.setVisible(not random_mode)
+        self.seed_word.setVisible(not random_mode)
+        if random_mode:
+            self.notice.setText(
+                "Jede Wallet erhält eine eigene zufällige Zahlen-PIN. Die PINs "
+                "werden nicht angezeigt oder gespeichert. Prozessoranzahl und "
+                "Auslastung werden an diesen Rechner angepasst."
+            )
+        else:
+            self.notice.setText(
+                "Alle Wallets werden mit dem ausgewählten englischen Seed-Wort "
+                "verschlüsselt. Prozessoranzahl und Auslastung werden an diesen "
+                "Rechner angepasst."
+            )
+
+    def password_settings(self):
+        mode = self.password_mode.currentData()
+        if mode == "random_pin":
+            return mode, str(self.pin_length.value())
+        word = self.seed_word.currentText().strip().lower()
+        if word not in SEED_WORD_SET:
+            raise ValueError(
+                "Wähle ein gültiges englisches Wort aus der Seed-Wortliste."
+            )
+        return mode, word
+
     def start_job(self):
         folder = self.folder.text().strip()
         if not folder:
             QMessageBox.information(self, "Eingabe prüfen", "Wähle einen Zielordner.")
             return
+        try:
+            password_mode, password_value = self.password_settings()
+        except ValueError as error:
+            QMessageBox.information(self, "Eingabe prüfen", str(error))
+            return
         worker_count = self.active_worker_count()
         self.job = WalletJob(
-            Path(folder).resolve(), self.count.value(), worker_count, self,
+            Path(folder).resolve(), self.count.value(), worker_count,
+            password_mode, password_value, self,
         )
         self.job.progress.connect(self.progress.setValue)
         self.job.completed.connect(self.job_completed)
@@ -298,8 +407,9 @@ class WalletWindow(QWidget):
             f"Wallets werden mit {worker_count} Prozessen geprüft und erstellt …"
         )
         for widget in (
-            self.folder, self.browse, self.count, self.cpu_percent,
-            self.process_limit, self.start,
+            self.folder, self.browse, self.count, self.password_mode,
+            self.pin_length, self.seed_word, self.cpu_percent, self.process_limit,
+            self.start,
         ):
             widget.setEnabled(False)
         self.is_paused = False
@@ -345,10 +455,12 @@ class WalletWindow(QWidget):
         self.job.deleteLater()
         self.job = None
         for widget in (
-            self.folder, self.browse, self.count, self.cpu_percent,
-            self.process_limit, self.start,
+            self.folder, self.browse, self.count, self.password_mode,
+            self.pin_length, self.seed_word, self.cpu_percent, self.process_limit,
+            self.start,
         ):
             widget.setEnabled(True)
+        self.update_password_controls()
         self.is_paused = False
         self.pause.setText("Pause")
         self.pause.setEnabled(False)
@@ -367,20 +479,25 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Walletgenerator")
     window = WalletWindow()
-    window.show()
     if len(sys.argv) == 3 and sys.argv[1] == "--smoke-test":
         root = Path(sys.argv[2])
-        window.folder.setText(str(root))
-        window.count.setValue(2)
-        window.start.click()
-        window.job.finished.connect(app.quit)
-        QTimer.singleShot(15000, app.quit)
-        app.exec()
-        if window.progress.value() != 2 or not window.status.text().startswith("Fertig."):
+        window.password_mode.setCurrentIndex(
+            window.password_mode.findData("seed_word")
+        )
+        window.seed_word.setCurrentText("abandon")
+        if window.password_settings() != ("seed_word", "abandon"):
             return 1
-        verify_wallet(root / "0000" / "wallet_0000001", WALLET_PIN)
+        if generate_batch((root, 0, 2, "seed_word", "abandon")) != 2:
+            return 1
+        verify_wallet(root / "0000" / "wallet_0000001", "abandon")
+        random_pins = {create_password("random_pin", "20") for _ in range(25)}
+        if len(random_pins) != 25 or not all(
+            len(pin) == 20 and pin.isdigit() for pin in random_pins
+        ):
+            return 1
         (root / "smoke-ok.txt").write_text("OK", encoding="utf-8")
         return 0
+    window.show()
     return app.exec()
 
 
