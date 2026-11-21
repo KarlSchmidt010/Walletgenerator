@@ -1,6 +1,7 @@
 """Create encrypted Electrum wallets with configurable passwords."""
 import asyncio
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+import ctypes
 import hashlib
 import json
 import multiprocessing
@@ -42,12 +43,76 @@ def verify_wallet(path, pin):
 
 
 LOGICAL_CPUS = max(1, os.cpu_count() or 1)
-APP_VERSION = "2.2"
+APP_VERSION = "2.3"
 SEED_WORDS = tuple(Mnemonic("en").wordlist)
 SEED_WORD_SET = frozenset(SEED_WORDS)
 PAUSE_FILE = ".walletgenerator.pause"
 CANCEL_FILE = ".walletgenerator.cancel"
 DATASET_FILE = ".walletgenerator-password-mode-v2"
+
+
+def set_windows_power_throttling(disabled):
+    """Opt this process out of Windows EcoQoS while generation is active."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from ctypes import wintypes
+
+        class ProcessPowerThrottlingState(ctypes.Structure):
+            _fields_ = (
+                ("Version", wintypes.ULONG),
+                ("ControlMask", wintypes.ULONG),
+                ("StateMask", wintypes.ULONG),
+            )
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.SetProcessInformation.argtypes = (
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+        )
+        kernel32.SetProcessInformation.restype = wintypes.BOOL
+        kernel32.SetPriorityClass.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.SetPriorityClass.restype = wintypes.BOOL
+
+        handle = kernel32.GetCurrentProcess()
+        state = ProcessPowerThrottlingState(
+            Version=1,
+            ControlMask=1 if disabled else 0,
+            StateMask=0,
+        )
+        changed = kernel32.SetProcessInformation(
+            handle, 4, ctypes.byref(state), ctypes.sizeof(state),
+        )
+        if disabled:
+            # NORMAL_PRIORITY_CLASS keeps the PC responsive while preventing a
+            # worker from inheriting a below-normal priority class.
+            kernel32.SetPriorityClass(handle, 0x00000020)
+        return bool(changed)
+    except (AttributeError, OSError):
+        return False
+
+
+def set_windows_awake(enabled):
+    """Prevent automatic system sleep while a generation job is running."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.SetThreadExecutionState.argtypes = (wintypes.DWORD,)
+        kernel32.SetThreadExecutionState.restype = wintypes.DWORD
+        continuous = 0x80000000
+        system_required = 0x00000001
+        flags = continuous | system_required if enabled else continuous
+        return bool(kernel32.SetThreadExecutionState(flags))
+    except (AttributeError, OSError):
+        return False
+
+
+def configure_windows_worker():
+    """Apply the background-performance policy once in every worker process."""
+    set_windows_power_throttling(True)
 
 APP_STYLESHEET = """
 QWidget {
@@ -347,7 +412,10 @@ def generate(
             for start in range(0, count, batch_size)
         )
         completed = 0
-        with ProcessPoolExecutor(max_workers=worker_count) as pool:
+        with ProcessPoolExecutor(
+            max_workers=worker_count,
+            initializer=configure_windows_worker,
+        ) as pool:
             pending = set()
             for _ in range(worker_count):
                 try:
@@ -706,6 +774,8 @@ class WalletWindow(QWidget):
         self.pause.setText("Ⅱ  Pause")
         self.pause.setEnabled(True)
         self.cancel.setEnabled(True)
+        set_windows_power_throttling(True)
+        set_windows_awake(True)
         self.job.start()
 
     def toggle_pause(self):
@@ -751,6 +821,8 @@ class WalletWindow(QWidget):
         QMessageBox.critical(self, "Walletgenerator", message)
 
     def job_finished(self):
+        set_windows_awake(False)
+        set_windows_power_throttling(False)
         self.job.deleteLater()
         self.job = None
         for widget in (
@@ -788,6 +860,9 @@ def main():
         return 0 if saved else 1
     if len(sys.argv) == 3 and sys.argv[1] == "--smoke-test":
         root = Path(sys.argv[2])
+        configure_windows_worker()
+        set_windows_awake(True)
+        set_windows_awake(False)
         window.password_mode.setCurrentIndex(
             window.password_mode.findData("seed_word")
         )
